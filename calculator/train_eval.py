@@ -2,29 +2,32 @@ import os
 import numpy as np
 import tensorflow.compat.v1 as tf
 import random
-from PIL import Image
 import cv2
 from glob import glob
-from tensorflow.examples.tutorials.mnist import input_data
 from tqdm import tqdm
 
-mnist = input_data.read_data_sets('D:\\', one_hot=False)
 
 tf.disable_eager_execution()
 
+CKPT_PATH = r'checkpoint'
+
+if not os.path.exists(CKPT_PATH):
+    os.makedirs(CKPT_PATH)
+
 BATCH_SIZE = 1000
 BASE_LR = 0.1
-CKPT_FILE = 'sym.ckpt'
+CKPT_FILE = os.path.join(CKPT_PATH, r'sym.ckpt')
 COEFF = 5
 
 CLASS_ID_DICT = {str(i): i for i in range(15)}
-SYM_IMGS_ROOT = r'.'
+SYM_IMGS_ROOT = r'data'
 EPOCH = 500
 NUM_CLASS = 15
 
 x = tf.placeholder(dtype=tf.float32, shape=[None, 784], name='x')
 y = tf.placeholder(dtype=tf.float32, shape=[None, NUM_CLASS], name='y')
 learning_rate = tf.placeholder(tf.float32, shape=[], name='lr')
+
 
 def get_sym_data():
     cls = CLASS_ID_DICT.keys()
@@ -58,12 +61,12 @@ def get_sym_data():
     print(max(train_ids), max(test_ids), type(train_ids), type(test_ids))
     train_ids = np.eye(NUM_CLASS)[train_ids]
     test_ids = np.eye(NUM_CLASS)[test_ids]
-    
+
     print(train_img_lst.shape, test_img_lst.shape)
     print(train_ids.shape, test_ids.shape)
 
-    train_mean = np.mean(train_img_lst)
-    train_std = np.sqrt(np.var(train_img_lst))
+    # train_mean = np.mean(train_img_lst)
+    # train_std = np.sqrt(np.var(train_img_lst))
 
     # train_img_lst = (train_img_lst - train_mean) / train_std
     # test_img_lst = (test_img_lst - train_mean) / train_std
@@ -76,9 +79,10 @@ def get_sym_data():
 
 def add_layer(input_data, input_num, output_num, activation_function=None, name='fc'):
     with tf.variable_scope(name):
-        w = tf.Variable(initial_value=tf.truncated_normal(shape=[input_num, output_num], mean=0, stddev=np.sqrt(2 / np.prod(input_data.get_shape().as_list()[1:]))))
+        w = tf.Variable(initial_value=tf.truncated_normal(shape=[
+                        input_num, output_num], mean=0, stddev=np.sqrt(2 / np.prod(input_data.get_shape().as_list()[1:]))))
         b = tf.Variable(initial_value=tf.zeros(shape=[1, output_num]))
-        
+
         output = tf.add(tf.matmul(input_data, w), b)
 
         output = tf.layers.batch_normalization(output)
@@ -90,10 +94,13 @@ def add_layer(input_data, input_num, output_num, activation_function=None, name=
 
 
 def build_nn(data):
-    hidden_layer1 = add_layer(data, 784, 512, activation_function=tf.nn.leaky_relu, name='l1')
-    hidden_layer2 = add_layer(hidden_layer1, 512, 256, activation_function=tf.nn.leaky_relu, name='l2')
+    hidden_layer1 = add_layer(
+        data, 784, 512, activation_function=tf.nn.leaky_relu, name='l1')
+    hidden_layer2 = add_layer(hidden_layer1, 512, 256,
+                              activation_function=tf.nn.leaky_relu, name='l2')
     output_layer = add_layer(hidden_layer2, 256, NUM_CLASS, name='l3')
     return output_layer
+
 
 def get_lr(e):
     if e < 0.3 * EPOCH:
@@ -104,14 +111,18 @@ def get_lr(e):
         return BASE_LR / COEFF / COEFF
     return BASE_LR / COEFF / COEFF / COEFF
 
-def train_nn(img):
+
+def train_eval_nn(imgs):
     output = build_nn(x)
-    loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=output))
-    optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate).minimize(loss)
-    accuracy = tf.reduce_sum(tf.cast(tf.equal(tf.arg_max(y, 1), tf.arg_max(output, 1)), tf.float32))
+    loss = tf.reduce_mean(
+        tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=output))
+    optimizer = tf.train.GradientDescentOptimizer(
+        learning_rate=learning_rate).minimize(loss)
+    accuracy = tf.reduce_sum(
+        tf.cast(tf.equal(tf.arg_max(y, 1), tf.arg_max(output, 1)), tf.float32))
 
     saver = tf.train.Saver()
-    
+
     best_acc = 0
 
     with tf.Session() as sess:
@@ -123,8 +134,11 @@ def train_nn(img):
                 epoch_const = 0
 
                 for idx in range(int(train_x.shape[0] / BATCH_SIZE)):
-                    x_data, y_data = train_x[idx * BATCH_SIZE: (idx + 1) * BATCH_SIZE], train_y[idx * BATCH_SIZE: (idx + 1) * BATCH_SIZE]
-                    cost, _ = sess.run([loss, optimizer], feed_dict={x: x_data, y: y_data, learning_rate: get_lr(i)})
+                    x_data, y_data = train_x[idx * BATCH_SIZE: (
+                        idx + 1) * BATCH_SIZE], train_y[idx * BATCH_SIZE: (idx + 1) * BATCH_SIZE]
+                    
+                    cost, _ = sess.run([loss, optimizer], feed_dict={
+                                       x: x_data, y: y_data, learning_rate: get_lr(i)})
                     epoch_const += cost
 
                 acc_num = sess.run(accuracy, feed_dict={x: test_x, y: test_y})
@@ -134,13 +148,15 @@ def train_nn(img):
                     best_acc = epoch_acc
                     saver.save(sess, CKPT_FILE)
 
-                print('Epoch {}:\t loss: {:.6}\t acc: {:.4}'.format(i, epoch_const, epoch_acc))
-            
-            print('Best acc: {:.4}'.format(best_acc))            
+                print('Epoch {}:\t loss: {:.6}\t acc: {:.4}'.format(
+                    i, epoch_const, epoch_acc))
+
+            print('Best acc: {:.4}'.format(best_acc))
+            print('Training done.')
+            exit()
         else:
             saver.restore(sess, CKPT_FILE)
-            return predict(sess, output, img)
-
+            return predict(sess, output, imgs)
 
 
 def read_data(path):
@@ -150,81 +166,16 @@ def read_data(path):
     return image, processed_image
 
 
-def predict(sess, output, img): 
-    img_ = np.reshape(img, (img.shape[0] ,-1))
+def predict(sess, output, img):
+    img_ = np.reshape(img, (img.shape[0], -1))
 
     processed_image = img_ / 127.5 - 1
-    
+
     result = sess.run(output, feed_dict={x: processed_image})
     result = np.argmax(result, 1)
 
     return result
 
-def predict_former(sess, output): 
-    drawing = False
-
-    def draw(event, x, y, flags, param):
-        global drawing
-        if event == cv2.EVENT_LBUTTONDOWN:
-            drawing = True
-        elif event == cv2.EVENT_MOUSEMOVE:
-            if drawing:
-                img[y: y + 10, x: x + 10] = 255
-        elif event == cv2.EVENT_LBUTTONUP:
-            drawing = False
-    
-    img = np.zeros((128, 128, 1), np.uint8)
-    cv2.namedWindow('Write number')
-    cv2.setMouseCallback('Write number', draw)
-
-    while True:
-        cv2.imshow('Write number',img)
-        if cv2.waitKey(20) & 0xFF == ord('q'):
-            break
-    cv2.destroyAllWindows()
-
-    img_ = cv2.resize(img, (28, 28))
-    img_ = np.reshape(img_, (1 ,-1))
-
-    processed_image = img_ / 255.0
-    
-    result = sess.run(output, feed_dict={x: processed_image})
-    result = np.argmax(result, 1)
-
-    print('The prediction is ', result)
-    result_img = cv2.resize(img, (512, 512))
-    cv2.putText(result_img, 'The prediction is {}'.format(result), (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (200, 255, 155), 2, cv2.LINE_AA)
-    cv2.imshow('image', result_img)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-
-
-def reconstruct_image():
-    for i in range(10):
-        if not os.path.exists('./{}'.format(i)):
-            os.makedirs('./{}'.format(i))
-    BATCH_SIZE = 1
-    cnt = 0
-
-    for i in range(int(mnist.train.num_examples / BATCH_SIZE)):
-        x_data, y_data = mnist.train.next_batch(BATCH_SIZE)
-        img = Image.fromarray(np.reshape(np.array(x_data[0] * 255, dtype='uint8'), newshape=(28, 28)))
-        dir = np.argmax(y_data[0])
-        img.save('{}/{}.jpg'.format(dir, cnt))
-        cnt += 1
-
-    for i in range(int(mnist.test.num_examples / BATCH_SIZE)):
-        x_data, y_data = mnist.test.next_batch(BATCH_SIZE)
-        img = Image.fromarray(np.reshape(np.array(x_data[0] * 255, dtype='uint8'), newshape=(28, 28)))
-        dir = np.argmax(y_data[0])
-        img.save('{}/{}.jpg'.format(dir, cnt))
-        cnt += 1
-    
-    print(cnt)
-
 
 if __name__ == "__main__":
-    train_nn(None)
-    # reconstruct_image()
-    # get_sym_data()
-    
+    train_eval_nn(None)
